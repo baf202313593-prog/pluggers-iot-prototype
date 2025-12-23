@@ -14,39 +14,34 @@ if 'page' not in st.session_state:
     st.session_state['page'] = 'landing' 
 if 'selected_room' not in st.session_state:
     st.session_state['selected_room'] = ''
-
 if 'rooms' not in st.session_state:
     st.session_state['rooms'] = [] 
 
+# Light Control States
 def reset_light_state():
     st.session_state['power'] = False
     st.session_state['brightness'] = 50
-    st.session_state['bulb_color'] = "#FFD700"
+    # Default color (Warm Yellow)
+    st.session_state['bulb_color'] = "#FFD700" 
     st.session_state['reading_mode'] = False
     st.session_state['dim_mode'] = False
 
 if 'power' not in st.session_state: reset_light_state()
 
-# --- Navigation Functions (The Fix) ---
-
-# NO st.rerun() here because we will call this with on_click
+# --- Navigation Functions ---
 def go_to_control(room_name):
     st.session_state['selected_room'] = room_name
     reset_light_state() 
     st.session_state['page'] = 'control'
 
-# NO st.rerun() here because we will call this with on_click
 def go_to_landing():
     st.session_state['page'] = 'landing'
 
-# We KEEP st.rerun() here because this is called procedurally inside a form, not a callback
 def add_room(name, bulb_id):
     with st.spinner(f"Searching for Device ID: {bulb_id}..."):
         time.sleep(1.0) 
-    
     with st.spinner("Verifying Firmware..."):
         time.sleep(0.5)
-        
     with st.spinner("Pairing successful!"):
         time.sleep(0.5)
 
@@ -54,24 +49,32 @@ def add_room(name, bulb_id):
     st.session_state['rooms'].append(new_room)
     st.success(f"Connected to {name}!")
     time.sleep(1) 
-    st.rerun() # Necessary here to refresh the page after form submission
+    st.rerun() 
 
-# --- Smart Logic ---
+# --- Smart Logic & Callbacks ---
+
+def handle_manual_color():
+    # If user picks a color manually, turn off presets and turn on power
+    st.session_state.reading_mode = False
+    st.session_state.dim_mode = False
+    st.session_state.power = True
+
 def update_reading_mode():
     if st.session_state.reading_mode:
         st.session_state.dim_mode = False
         st.session_state.power = True
-        st.session_state.brightness = 85
-        st.session_state.bulb_color = "#E0FFFF" 
+        st.session_state.brightness = 100
+        st.session_state.bulb_color = "#E0FFFF" # Cool White
     else:
+        # Revert to default if untoggled
         st.session_state.bulb_color = "#FFD700"
 
 def update_dim_mode():
     if st.session_state.dim_mode:
         st.session_state.reading_mode = False
         st.session_state.power = True
-        st.session_state.brightness = 25
-        st.session_state.bulb_color = "#FF8C00"
+        st.session_state.brightness = 20
+        st.session_state.bulb_color = "#FF8C00" # Deep Orange
     else:
         st.session_state.bulb_color = "#FFD700"
 
@@ -80,8 +83,7 @@ def update_dim_mode():
 # =========================================
 def landing_page():
     st.write("") 
-    
-    # st.image("logo.png", width=150) 
+    # st.image("logo.png", width=150) # Use your logo here if you have it
     
     st.markdown(
         """
@@ -100,14 +102,12 @@ def landing_page():
     else:
         for room in st.session_state['rooms']:
             btn_label = f"💡 {room['name']} (ID: {room['id']})"
-            
-            # UPDATED: We use on_click and args to handle the transition safely
             st.button(
                 btn_label, 
                 use_container_width=True, 
                 key=room['id'],
                 on_click=go_to_control,
-                args=(room['name'],) # Pass the room name as an argument
+                args=(room['name'],)
             )
     
     st.write("---")
@@ -119,7 +119,6 @@ def landing_page():
             new_bulb_id = st.text_input("Device ID (Found on box)")
             
             submitted = st.form_submit_button("Connect & Pair")
-            
             if submitted:
                 if new_room_name and new_bulb_id:
                     add_room(new_room_name, new_bulb_id)
@@ -132,7 +131,6 @@ def landing_page():
 def control_page():
     col_back, col_title, col_gear = st.columns([1, 4, 1])
     with col_back:
-        # UPDATED: Uses on_click callback
         st.button("←", on_click=go_to_landing) 
     with col_title:
         current_room = st.session_state.get('selected_room', 'DEVICE')
@@ -142,7 +140,7 @@ def control_page():
 
     st.write("")
 
-    # Bulb Visual
+    # --- Bulb Visual ---
     with st.container(border=False):
         if st.session_state.power:
             glow_intensity = st.session_state['brightness'] / 1.5
@@ -172,20 +170,36 @@ def control_page():
 
     st.write("") 
 
-    # Controls
+    # --- Control Box: Brightness & Color ---
     with st.container(border=True):
+        # Row 1: Power Toggle
         st.toggle("Master Power", key="power")
+        
         st.write("---")
+        
+        # Row 2: Brightness Slider
         col_icon, col_slider = st.columns([1, 5])
         with col_icon: st.write("🔅")
         with col_slider:
             st.slider("Brightness", 0, 100, key="brightness", disabled=not st.session_state.power, label_visibility="collapsed")
+            
+        # Row 3: Color Picker (NEW FEATURE)
+        col_c_icon, col_c_picker, col_c_text = st.columns([1, 1, 4])
+        with col_c_icon: st.write("🎨")
+        with col_c_picker:
+            # The color picker is bound to 'bulb_color' state
+            st.color_picker("Color", key="bulb_color", label_visibility="collapsed", on_change=handle_manual_color)
+        with col_c_text:
+            st.caption("Tap circle to change color")
 
+
+    # --- Control Box: Modes ---
     with st.container(border=True):
-        st.write("**Modes**")
-        st.toggle("Reading Mode", key="reading_mode", on_change=update_reading_mode)
-        st.toggle("Dim Light", key="dim_mode", on_change=update_dim_mode)
+        st.write("**Smart Modes**")
+        st.toggle("Reading Mode (Cool White)", key="reading_mode", on_change=update_reading_mode)
+        st.toggle("Night Light (Dim Orange)", key="dim_mode", on_change=update_dim_mode)
 
+    # --- Control Box: Schedule ---
     with st.container(border=True):
         st.write("**Schedule**")
         sch_col1, sch_col2 = st.columns(2)
